@@ -1,0 +1,15 @@
+{
+  "name": "payfree-v3-nodejs-backend",
+  "version": "3.0.0",
+  "description": "Node.js Backend for PayFree V 3.0 (iTantra) — ONNX Language Pack Server, AES-256-GCM Mesh Relay Gateway, Floor Arbiter & Telemetry Service",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/verify_backend.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "ws": "^8.18.0"
+  }
+}
