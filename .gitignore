@@ -1,0 +1,16 @@
+node_modules/
+.gradle/
+build/
+local.properties
+.env
+*.keystore
+*.jks
+*.onnx
+*.onnx.data
+*.part
+*.apk
+*.aab
+
+__pycache__/
+*.pyc
+dist/
