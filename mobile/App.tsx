@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
   AppState,
+  Easing,
   Modal,
   Pressable,
   SafeAreaView,
@@ -48,6 +50,7 @@ type Settings = {
   manifestUrl: string;
   backend: string;
   shareLocation: boolean;
+  sirenEnabled: boolean;
   messages: Message[];
 };
 type Colors = {
@@ -70,6 +73,7 @@ const initial: Settings = {
   manifestUrl: DEFAULT_MANIFEST_URL,
   backend: DEFAULT_BACKEND_URL,
   shareLocation: false,
+  sirenEnabled: true,
   messages: [],
 };
 const tabNames: Record<string, string[]> = {
@@ -99,7 +103,7 @@ function Button({
       style={[
         s.button,
         {
-          backgroundColor: secondary ? c.bg : "#347453",
+          backgroundColor: secondary ? c.bg : "#1769AA",
           borderColor: c.line,
           borderWidth: secondary ? 1 : 0,
           opacity: disabled ? 0.45 : 1,
@@ -143,6 +147,15 @@ function Field({
     />
   );
 }
+function notifyMessage(setError: (message: string) => void) {
+  try {
+    if (Native && typeof Native.vibrateForMessage === "function") {
+      Native.vibrateForMessage().catch(() => {});
+    }
+  } catch {
+    // Notification feedback must never interrupt receiving or speech playback.
+  }
+}
 export default function App() {
   const [data, setData] = useState(initial),
     ref = useRef(data),
@@ -162,14 +175,22 @@ export default function App() {
     [peers, setPeers] = useState<any[]>([]),
     [transport, setTransport] = useState("all"),
     [pairCode, setPairCode] = useState(""),
-    [radioStatus, setRadioStatus] = useState("");
+    [radioStatus, setRadioStatus] = useState("Ready to connect"),
+    [hostingTransport, setHostingTransport] = useState<"wifi" | "bluetooth" | null>(null),
+    [connectionState, setConnectionState] = useState<
+      "idle" | "scanning" | "hosting" | "joining" | "pairing" | "connected" | "failed"
+    >("idle");
   const [packs, setPacks] = useState<Record<string, boolean>>({}),
     packsRef = useRef(packs),
     [manifest, setManifest] = useState<any>(null),
     [downloading, setDownloading] = useState(""),
     [progress, setProgress] = useState<any>(null);
   const [recording, setRecording] = useState(false),
+    [pttState, setPttState] = useState<"idle" | "arming" | "recording" | "processing">("idle"),
     recordStart = useRef<Promise<void> | null>(null),
+    pttPressed = useRef(false),
+    recordingRef = useRef(false),
+    pttScale = useRef(new Animated.Value(1)).current,
     requesting = useRef(false),
     localFloor = useRef(false),
     remoteFloor = useRef(false),
@@ -182,6 +203,7 @@ export default function App() {
     [filter, setFilter] = useState("all"),
     [token, setToken] = useState(""),
     [answer, setAnswer] = useState("");
+  const [sirenEnabled, setSirenEnabled] = useState(true);
   const audioBusy = useRef(0);
   const saveChain = useRef(Promise.resolve()),
     receiveChain = useRef(Promise.resolve());
@@ -190,18 +212,18 @@ export default function App() {
       data.theme === "dark" || (data.theme === "system" && system === "dark");
   const c: Colors = dark
     ? {
-        bg: "#11231D",
-        card: "#1E352B",
-        ink: "#EFF7E9",
-        muted: "#ADC2B4",
-        line: "#3C574A",
+        bg: "#071426",
+        card: "#10243D",
+        ink: "#F1F7FF",
+        muted: "#AFC2D8",
+        line: "#2A4566",
       }
     : {
-        bg: "#F4F8EF",
+        bg: "#F2F7FC",
         card: "#FFFFFF",
-        ink: "#1C392D",
-        muted: "#61776A",
-        line: "#DCE6D6",
+        ink: "#102A43",
+        muted: "#607A96",
+        line: "#D5E3F1",
       };
   const tabs = tabNames[data.ui] || tabNames.en;
   const update = (patch: Partial<Settings>) => {
@@ -231,6 +253,19 @@ export default function App() {
     }
   };
   const wire = async (m: any) => Native.send(JSON.stringify(m));
+  const sendPosition = (fix: any) => {
+    if (!ref.current.shareLocation || !paired.current || !fix) return;
+    return wire({
+      id: uid(),
+      kind: "position",
+      time: fix.time || Date.now(),
+      coords: {
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        accuracy: fix.accuracy,
+      },
+    });
+  };
   const control = (op: string, extra: any = {}) =>
     wire({
       id: uid(),
@@ -313,6 +348,7 @@ export default function App() {
       };
       await add(incoming);
       await wire({ id: uid(), kind: "ack", ack: m.id, time: Date.now() });
+      notifyMessage(setError);
       if (m.kind === "alert")
         Alert.alert(
           "Incoming alert",
@@ -359,6 +395,7 @@ export default function App() {
       .then((raw: string) => {
         const d = JSON.parse(raw);
         update({ ...initial, ...d, messages: prune(d.messages || []) });
+        setSirenEnabled(d.sirenEnabled !== false);
         setLoaded(true);
       })
       .catch((e: any) => {
@@ -370,8 +407,15 @@ export default function App() {
     const sub = events.addListener("Talk2Event", (raw: string) => {
       try {
         const e = JSON.parse(raw);
-        if (e.type === "error") setError(e.message);
-        if (e.type === "status") setRadioStatus(e.state);
+        if (e.type === "error") {
+          setError(e.message);
+          setConnectionState("failed");
+          setRadioStatus(e.message || "Connection failed");
+        }
+        if (e.type === "status") {
+          setRadioStatus(e.state);
+          if (e.state === "Waiting for peer") setConnectionState("hosting");
+        }
         if (e.type === "peer")
           setPeers((p) =>
             p.some((x) => x.id === e.id && x.transport === e.transport)
@@ -381,10 +425,14 @@ export default function App() {
         if (e.type === "pairing") {
           setPairCode(e.code);
           setShowConnect(false);
+          setConnectionState("pairing");
+          setRadioStatus("Verify the pairing code");
         }
         if (e.type === "connected") {
           paired.current = true;
           setConnected(true);
+          setConnectionState("connected");
+          setRadioStatus("Connected");
           setPeerLocation(null);
           wire({
             id: uid(),
@@ -393,10 +441,19 @@ export default function App() {
             name: ref.current.name,
             deviceId: ref.current.deviceId,
           }).catch((x: any) => setError(x.message));
+          if (ref.current.shareLocation) {
+            permissions("location")
+              .then(() => Native.startSensors())
+              .then(() => sendPosition(location))
+              .catch((x: any) => setError(x.message));
+          }
         }
         if (e.type === "disconnected") {
           paired.current = false;
           setConnected(false);
+          setConnectionState("idle");
+          setRadioStatus("Disconnected");
+          setHostingTransport(null);
           setPeerLocation(null);
           setPairCode("");
           localFloor.current = false;
@@ -415,17 +472,7 @@ export default function App() {
         if (e.type === "heading") setHeading(e.degrees);
         if (e.type === "location") {
           setLocation(e);
-          if (ref.current.shareLocation && paired.current)
-            wire({
-              id: uid(),
-              kind: "position",
-              time: e.time,
-              coords: {
-                latitude: e.latitude,
-                longitude: e.longitude,
-                accuracy: e.accuracy,
-              },
-            }).catch((x: any) => setError(x.message));
+          sendPosition(e)?.catch((x: any) => setError(x.message));
         }
         if (e.type === "download") setProgress(e);
         if (e.type === "metric") setMetrics((m: any) => ({ ...m, ...e }));
@@ -550,23 +597,40 @@ export default function App() {
     localFloor.current = true;
   }
   const begin = () => {
-    if (busy || recordStart.current) return;
+    if (busy || recordStart.current || pttPressed.current) return;
+    pttPressed.current = true;
+    setPttState("arming");
     setError("");
-    recordStart.current = (async () => {
-      try {
-        if (!packsRef.current[ref.current.current])
-          throw new Error("Install the active speech pack first");
-        await permissions("mic");
-        await acquireFloor();
-        await Native.startRecording();
-        setRecording(true);
-      } finally {
-        requesting.current = false;
-      }
-    })();
+    recordStart.current = new Promise<void>((resolve, reject) => {
+      setTimeout(async () => {
+        try {
+          if (!pttPressed.current) {
+            resolve();
+            return;
+          }
+          if (!packsRef.current[ref.current.current])
+            throw new Error("Install the active speech pack first");
+          await permissions("mic");
+          await acquireFloor();
+          await Native.startRecording();
+          recordingRef.current = true;
+          setRecording(true);
+          setPttState("recording");
+          resolve();
+        } catch (e) {
+          reject(e);
+        } finally {
+          requesting.current = false;
+        }
+      }, 160);
+    });
     recordStart.current.catch((e: any) => {
       setError(e.message);
       recordStart.current = null;
+      pttPressed.current = false;
+      recordingRef.current = false;
+      setRecording(false);
+      setPttState("idle");
       requesting.current = false;
       if (localFloor.current) {
         localFloor.current = false;
@@ -574,13 +638,17 @@ export default function App() {
       }
     });
   };
-  const end = () =>
+  const end = () => {
+    pttPressed.current = false;
+    const p = recordStart.current;
+    if (!p) return;
     run(async () => {
-      const p = recordStart.current;
-      if (!p) return;
       try {
         await p;
+        if (!recordingRef.current) return;
+        setPttState("processing");
         setRecording(false);
+        recordingRef.current = false;
         setBusy("Recognizing on this phone…");
         const recognized = await Native.stopRecording(ref.current.current);
         if (!recognized.trim())
@@ -597,6 +665,10 @@ export default function App() {
         setText(recognized);
       } finally {
         recordStart.current = null;
+        pttPressed.current = false;
+        recordingRef.current = false;
+        setRecording(false);
+        setPttState("idle");
         setBusy("");
         if (localFloor.current) {
           localFloor.current = false;
@@ -604,6 +676,7 @@ export default function App() {
         }
       }
     });
+  };
   const disconnect = () =>
     run(async () => {
       await Native.disconnect();
@@ -767,28 +840,75 @@ export default function App() {
         )
     ) : (
       <View style={s.empty}>
-        <Text style={{ fontSize: 42, color: "#60936A" }}>◌</Text>
+        <Text style={{ fontSize: 42, color: "#2D8DD0" }}>◌</Text>
         {title("A little closer, in every language.")}
         {note("Connect two phones or save a message for later.")}
       </View>
     );
   }
+  useEffect(() => {
+    if (pttState === "recording") {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pttScale, {
+            toValue: 1.06,
+            duration: 650,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pttScale, {
+            toValue: 1,
+            duration: 650,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+    Animated.spring(pttScale, {
+      toValue: pttState === "arming" ? 0.96 : 1,
+      useNativeDriver: true,
+      speed: 20,
+      bounciness: 7,
+    }).start();
+  }, [pttScale, pttState]);
   const mic = (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Hold to talk"
-      disabled={!!busy}
-      onPressIn={begin}
-      onPressOut={end}
-      style={[s.mic, { backgroundColor: recording ? "#D47743" : "#347453" }]}
-    >
-      <Text style={{ color: "#FFF", fontSize: 28 }}>
-        {recording ? "■" : "●"}
-      </Text>
-      <Text style={{ color: "#FFF", fontWeight: "700" }}>
-        {recording ? "Release to transcribe" : "Hold to talk"}
-      </Text>
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale: pttScale }] }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Hold to talk, release to transcribe"
+        disabled={!!busy}
+        onPressIn={begin}
+        onPressOut={end}
+        delayLongPress={120}
+        style={[
+          s.mic,
+          {
+            backgroundColor:
+              pttState === "recording"
+                ? "#D47743"
+                : pttState === "arming"
+                  ? "#2D8DD0"
+                  : "#347453",
+          },
+        ]}
+      >
+        <Text style={{ color: "#FFF", fontSize: 28 }}>
+          {pttState === "recording" ? "■" : pttState === "processing" ? "…" : "●"}
+        </Text>
+        <Text style={{ color: "#FFF", fontWeight: "700" }}>
+          {pttState === "recording"
+            ? "Release to transcribe"
+            : pttState === "arming"
+              ? "Starting…"
+              : pttState === "processing"
+                ? "Transcribing…"
+                : "Hold to talk"}
+        </Text>
+      </Pressable>
+    </Animated.View>
   );
   const fresh =
     location &&
@@ -796,6 +916,21 @@ export default function App() {
     clock - location.time < 15000 &&
     clock - peerLocation.time < 15000;
   const polar = fresh ? position(location, peerLocation, heading) : null;
+  const radarDistance = polar ? polar.distance : null;
+  useEffect(() => {
+    if (
+      !connected ||
+      !sirenEnabled ||
+      radarDistance === null ||
+      radarDistance > 20
+    )
+      return;
+    Native.sirenTone().catch((e: any) => setError(e.message));
+    const timer = setInterval(() => {
+      Native.sirenTone().catch((e: any) => setError(e.message));
+    }, 1400);
+    return () => clearInterval(timer);
+  }, [connected, radarDistance, sirenEnabled]);
   let content: React.ReactNode;
   if (!loaded) content = note("Loading Talk2…");
   else if (!data.setup)
@@ -809,7 +944,7 @@ export default function App() {
                 flex: 1,
                 height: 5,
                 borderRadius: 3,
-                backgroundColor: i <= step ? "#60936A" : c.line,
+                backgroundColor: i <= step ? "#2D8DD0" : c.line,
               }}
             />
           ))}
@@ -1002,7 +1137,11 @@ export default function App() {
             </View>
           </>,
         )}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.scrollPills}
+        >
           {Object.entries(templates)
             .slice(0, 3)
             .map(([key, p]) => (
@@ -1058,10 +1197,14 @@ export default function App() {
                     run(async () => {
                       await permissions("location");
                       await Native.startSensors();
+                      await sendPosition(location);
                     });
                 }}
               />
             </View>
+            {note(
+              "Location is shared only with the paired phone while this switch is on. Enable it before or after pairing.",
+            )}
             {note(
               location
                 ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)} · ±${Math.round(location.accuracy)} m`
@@ -1087,6 +1230,34 @@ export default function App() {
               }}
             />
           ))}
+          {connected && (
+            <View style={[s.distanceBadge, s.radarDistance, { borderColor: c.line }]}>
+              <Text style={{ color: c.muted, fontSize: 11 }}>DISTANCE</Text>
+              <Text style={[s.distanceValue, { color: c.ink }]}>
+                {radarDistance === null ? "--" : `${Math.round(radarDistance)} m`}
+              </Text>
+            </View>
+          )}
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: sirenEnabled }}
+            onPress={() => {
+              const value = !sirenEnabled;
+              setSirenEnabled(value);
+              change({ sirenEnabled: value });
+            }}
+            style={[
+              s.sirenPill,
+              {
+                backgroundColor: sirenEnabled ? "#347453" : c.bg,
+                borderColor: c.line,
+              },
+            ]}
+          >
+            <Text style={{ color: sirenEnabled ? "#FFF" : c.muted, fontSize: 12, fontWeight: "700" }}>
+              {sirenEnabled ? "Siren ON · 20 m" : "Siren OFF"}
+            </Text>
+          </Pressable>
           {["N", "E", "S", "W"].map((name, i) => {
             const angle = ((i * 90 - heading) * Math.PI) / 180;
             return (
@@ -1127,12 +1298,30 @@ export default function App() {
         {title(`${Math.round(heading)}° heading`)}
         {note(
           polar
-            ? `${Math.round(polar.distance)} m · bearing ${Math.round(polar.bearing)}° · ±${Math.round(location.accuracy + peerLocation.accuracy)} m combined uncertainty`
+            ? `${Math.round(polar.distance)} m · bearing ${Math.round(polar.bearing)}° · ±${Math.round(location.accuracy + peerLocation.accuracy)} m combined uncertainty${polar.distance <= 20 && sirenEnabled ? " · SIREN ACTIVE" : ""}`
             : "Peer direction unavailable: both phones need fresh shared GPS.",
         )}
         {note(
           "Bluetooth strength cannot determine a device’s direction. Devices without coordinates appear only in the discovery list.",
         )}
+        {peers.length > 0 &&
+          card(
+            <>
+              {title("Talk2 devices nearby")}
+              {peers.map((p) => (
+                <View style={s.row} key={p.transport + p.id}>
+                  <Text style={{ color: c.ink, flex: 1 }}>
+                    {p.name} · {p.transport}
+                  </Text>
+                  {button(
+                    "Join",
+                    () => run(() => Native.join(p.transport, p.id)),
+                    true,
+                  )}
+                </View>
+              ))}
+            </>,
+          )}
         {button("Discover nearby phones", () => setShowConnect(true), true)}
       </>
     );
@@ -1197,7 +1386,11 @@ export default function App() {
   else if (tab === "history")
     content = (
       <>
-        <ScrollView horizontal>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.scrollPills}
+        >
           {["all", "in", "out", "delivered", "queued", "pending"].map((x) => (
             <Button
               key={x}
@@ -1340,7 +1533,7 @@ export default function App() {
             }
           }}
         >
-          <Text style={{ color: "#60936A", fontWeight: "700" }}>
+          <Text style={{ color: "#1769AA", fontWeight: "700" }}>
             {langs.find((l) => l.code === data.current)?.native}
           </Text>
         </Pressable>
@@ -1391,7 +1584,7 @@ export default function App() {
               style={[
                 s.navItem,
                 tab === key && {
-                  backgroundColor: dark ? "#36523D" : "#E7EFDE",
+                  backgroundColor: dark ? "#173B61" : "#E3F0FB",
                 },
               ]}
             >
@@ -1426,10 +1619,31 @@ export default function App() {
           <View style={[s.sheet, { backgroundColor: c.bg }]}>
             <ScrollView>
               <Text style={[s.hero, { color: c.ink }]}>Connect nearby.</Text>
+              <View style={[s.connectionBanner, { backgroundColor: c.card, borderColor: c.line }]}>
+                <View style={[s.stateDot, { backgroundColor: connectionState === "connected" ? "#2BAA72" : connectionState === "failed" ? "#D35D5D" : "#2D8DD0" }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: c.ink, fontWeight: "700" }}>
+                    {connectionState === "scanning"
+                      ? "Scanning for Talk2 devices"
+                      : connectionState === "hosting"
+                        ? "Waiting for another phone"
+                        : connectionState === "joining"
+                          ? "Connecting to selected phone"
+                          : connectionState === "pairing"
+                            ? "Pairing requires confirmation"
+                            : connectionState === "connected"
+                              ? "Talk2 connection active"
+                              : connectionState === "failed"
+                                ? "Connection needs attention"
+                                : "Ready to connect"}
+                  </Text>
+                  {note(radioStatus)}
+                </View>
+              </View>
               {note(
                 "Use the same transport on both phones. Compare the pairing code before messages are enabled.",
               )}
-              <View style={s.row}>
+              <View style={s.pillRow}>
                 {["all", "wifi", "bluetooth"].map((x) => (
                   <Button
                     key={x}
@@ -1440,32 +1654,46 @@ export default function App() {
                   />
                 ))}
               </View>
-              {button("Scan for phones", () =>
-                run(async () => {
-                  await permissions("radio");
-                  setPeers([]);
-                  await Native.discover(transport);
-                }),
+              {button(
+                connectionState === "scanning" ? "Scanning…" : "Scan for phones",
+                () =>
+                  run(async () => {
+                    setConnectionState("scanning");
+                    setRadioStatus("Looking for Talk2 devices…");
+                    setPeers([]);
+                    await permissions("radio");
+                    await Native.discover(transport);
+                  }),
+                false,
+                connectionState === "scanning",
               )}
-              <View style={s.row}>
+              <View style={s.pillRow}>
                 {button(
-                  "Host Wi-Fi",
+                  hostingTransport === "wifi" ? "Hosting Wi-Fi…" : "Host Wi-Fi",
                   () =>
                     run(async () => {
+                      setConnectionState("hosting");
+                      setHostingTransport("wifi");
+                      setRadioStatus("Starting Wi-Fi host…");
                       await permissions("radio");
                       await Native.host("wifi");
                     }),
                   true,
+                  hostingTransport !== null,
                 )}
                 {button(
-                  "Host Bluetooth",
+                  hostingTransport === "bluetooth" ? "Hosting Bluetooth…" : "Host Bluetooth",
                   () =>
                     run(async () => {
+                      setConnectionState("hosting");
+                      setHostingTransport("bluetooth");
+                      setRadioStatus("Starting Bluetooth host…");
                       await permissions("radio");
                       await Native.bluetoothDiscoverable();
                       await Native.host("bluetooth");
                     }),
                   true,
+                  hostingTransport !== null,
                 )}
               </View>
               {note(radioStatus)}
@@ -1475,7 +1703,13 @@ export default function App() {
                   title={`${p.name} · ${p.transport} → Join`}
                   c={c}
                   secondary
-                  onPress={() => run(() => Native.join(p.transport, p.id))}
+                  onPress={() =>
+                    run(async () => {
+                      setConnectionState("joining");
+                      setRadioStatus(`Connecting to ${p.name || "Talk2 phone"}…`);
+                      await Native.join(p.transport, p.id);
+                    })
+                  }
                 />
               ))}
               {button("Close", () => setShowConnect(false), true)}
@@ -1491,7 +1725,7 @@ export default function App() {
               style={{
                 fontSize: 42,
                 letterSpacing: 7,
-                color: "#60936A",
+                color: "#2D8DD0",
                 textAlign: "center",
                 marginVertical: 20,
               }}
@@ -1541,6 +1775,13 @@ const s = StyleSheet.create({
     gap: 10,
     flexWrap: "wrap",
   },
+  pillRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  scrollPills: { paddingRight: 12, gap: 4 },
   input: {
     borderWidth: 1,
     borderRadius: 14,
@@ -1578,13 +1819,14 @@ const s = StyleSheet.create({
     width: 84,
     height: 84,
     borderRadius: 42,
-    backgroundColor: "#E7EFDE",
+    backgroundColor: "#E3F0FB",
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",
     margin: 12,
   },
   radar: {
+    position: "relative",
     height: 280,
     width: 280,
     borderRadius: 140,
@@ -1594,6 +1836,25 @@ const s = StyleSheet.create({
     justifyContent: "center",
     marginVertical: 20,
   },
+  distanceBadge: {
+    minWidth: 64,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: "flex-end",
+  },
+  distanceValue: { fontSize: 15, fontWeight: "800", marginTop: 1 },
+  radarDistance: { position: "absolute", top: 4, right: 4, zIndex: 2 },
+  sirenPill: {
+    position: "absolute",
+    bottom: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
   overlay: { flex: 1, backgroundColor: "#0008", justifyContent: "flex-end" },
   sheet: {
     padding: 24,
@@ -1601,6 +1862,16 @@ const s = StyleSheet.create({
     borderTopRightRadius: 30,
     maxHeight: "85%",
   },
+  connectionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  stateDot: { width: 10, height: 10, borderRadius: 5 },
   error: {
     backgroundColor: "#FFE5D7",
     marginHorizontal: 16,

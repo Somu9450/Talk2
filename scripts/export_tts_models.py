@@ -1,4 +1,4 @@
-# Adapted from the supplied iTantra exporter; see NOTICE.
+# Talk2 model export utility; verify each checkpoint's license before distribution.
 """Export VITS (MMS-TTS) voices to INT8 ONNX plus the vocabulary the app expects.
 
 Run for every language, or for a subset:

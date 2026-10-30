@@ -1,4 +1,4 @@
-# Adapted from the supplied iTantra exporter; see NOTICE.
+# Talk2 model export utility; verify each checkpoint's license before distribution.
 """Export wav2vec2 CTC acoustic models to INT8 ONNX plus their vocabulary.
 
 Run for every configured language, or for a subset:

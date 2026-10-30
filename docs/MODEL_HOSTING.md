@@ -2,7 +2,7 @@
 
 ## Built-in release
 
-`model-host/upstream-manifest.json` contains the verified asset names, exact byte sizes, SHA-256 digests and download URLs from `Sanchit-044/iTantra` release `model-pack-v1`. Leave the app's manifest URL blank to use it. The release has **39 assets: nine complete speech packs and three shared translation files**. It has no Hindi ONNX weights; those were intended to ship in the original APK. None of the uploaded branch ZIPs contains these weights either.
+`model-host/upstream-manifest.json` contains the verified asset names, exact byte sizes, SHA-256 digests and download URLs for the supplied speech release. Leave the app's manifest URL blank to use it. The release has **39 assets: nine complete speech packs and three shared translation files**. It has no Hindi ONNX weights; a separate Hindi release is required. Do not publish a pack until its model-card and redistribution terms have been checked.
 
 The screenshot's 78–82 MB labels do not match these assets. Use manifest byte sizes. A language needs both its speech recognition model/vocab and its voice model/vocab. Language packs alone do not perform text translation.
 

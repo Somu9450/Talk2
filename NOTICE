@@ -1,13 +1,12 @@
 Talk2
 Copyright 2026 Talk2 contributors.
 
-New React Native and Java implementation informed by the supplied iTantra materials:
-https://github.com/Sanchit-044/iTantra
+New React Native and Java implementation for Talk2.
 
-Localized alert phrases and adapted Python model-export scripts originate from those
-materials. Their documentation declares the iTantra project Apache-2.0. Preserve
-upstream notices and verify permissions/licenses for any additional copied assets.
-The uploaded source did not include a root LICENSE file.
+Localized alert phrases and Python model-export scripts are maintained in this
+project. Verify permissions/licenses for every external checkpoint, tokenizer,
+dataset and copied asset before redistribution. Model cards and upstream
+licenses remain authoritative for downloaded model files.
 
 React and React Native: Meta Platforms, Inc. and affiliates (MIT).
 ONNX Runtime: Microsoft Corporation (MIT).

@@ -1,6 +1,6 @@
 # Talk2
 
-React Native Android communication app with Java device integrations and an optional Node.js backend. Sage green, warm orange, comfortable cards and clear status messages. A fresh reimplementation informed by the uploaded iTantra branches, presentation and screenshots.
+React Native Android communication app with Java device integrations and an optional Node.js backend. Sage green, warm orange, comfortable cards and clear status messages.
 
 **Read [docs/STATUS.md](docs/STATUS.md) before treating this as a production-ready app.** This source package is a working implementation to build and validate, not a claim of verified ten-language translation or tested radio behavior on physical phones. Model weights are downloaded separately.
 

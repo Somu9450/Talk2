@@ -27,7 +27,7 @@ Native Android compilation and packaging succeeded. The included standalone ARM6
 | Hindi | Not present in upstream release; user must supply four matched files. Hindi STT checkpoint provenance is missing from the upstream export registry. |
 | Speech quality | Real weights need target-device testing, WER/CER and bilingual review. Greedy CTC is used; this is not the upstream beam-search implementation. Number/abbreviation normalization is not complete; unsupported voice characters produce an error rather than silently dropping words. |
 | Language ID | Script heuristic after STT, restricted to installed packs; not neural acoustic language identification. Hindi/Marathi ambiguity retains the active choice. |
-| Transport | One paired peer; explicit radio selection/reconnection. No BLE GATT, mesh, multipath, seamless handoff or iTantra APK interoperability. |
+| Transport | One paired peer; explicit radio selection/reconnection. No BLE GATT, mesh, multipath or seamless handoff. |
 | Background | Foreground app is required. No persistent foreground service, locked-screen PTT, power-button SOS or background model-download service. |
 | Alerts | Audible notification tone and localized speech at current user volume; no forced maximum-volume siren, emergency-service contact or guarantee of delivery. Alert tone is immediate; speech is serialized with inference. |
 | Profile/UI | Name and initials; no avatar camera/gallery integration. Core tab labels are localized; supporting UI uses English fallback. |

@@ -16,7 +16,7 @@ Wi-Fi Direct establishes a group and carries a TCP stream on port 47773. Bluetoo
 
 ## Wire/security
 
-Talk2 is intentionally a new protocol; it is not interoperable with an iTantra APK. The handshake exchanges magic `0x54325031`, length-prefixed X.509 P-256 public keys and derives keys through ECDH/HKDF-SHA256. The public-key transcript is hashed in stable sorted order. Independent directional encryption keys prevent reflected frames from authenticating in the reverse direction.
+Talk2 uses its own protocol and requires Talk2 at both ends. The handshake exchanges magic `0x54325031`, length-prefixed X.509 P-256 public keys and derives keys through ECDH/HKDF-SHA256. The public-key transcript is hashed in stable sorted order. Independent directional encryption keys prevent reflected frames from authenticating in the reverse direction.
 
 Operators compare a six-digit short authentication string and confirm on both phones before application content is accepted. AES-256-GCM authenticates each encrypted UTF-8 JSON envelope with the handshake transcript as AAD. A frame carries a 12-byte nonce followed by ciphertext and a 16-byte tag. Nonces contain a random four-byte prefix and a monotonic eight-byte counter. The receiver validates the session prefix and high-water mark after tag verification. Frames are bounded in size. Fresh ECDH keys are generated for every connection. A heartbeat detects an unresponsive confirmed peer.
 
@@ -30,7 +30,9 @@ Paired PTT sends a floor request and waits up to five seconds for grant/deny. Si
 
 ## Radar
 
-Android's rotation-vector sensor fuses available orientation sensors, typically including accelerometer, gyroscope and magnetometer. GPS plus geomagnetic declination converts magnetic heading to true heading when a fix is available. A peer sends coordinates only when its user enables sharing. Haversine distance and geodesic initial bearing are rotated by the local heading. Fixes older than 15 seconds are excluded. Accuracy is shown as combined GPS uncertainty. Radio RSSI is not treated as a direction sensor.
+Android's rotation-vector sensor fuses available orientation sensors, typically including accelerometer, gyroscope and magnetometer. GPS plus geomagnetic declination converts magnetic heading to true heading when a fix is available. A peer sends coordinates only when its user enables sharing; if sharing is already enabled, pairing starts GPS and publishes the latest fix immediately. Haversine distance and geodesic initial bearing are rotated by the local heading. Fixes older than 15 seconds are excluded. Accuracy is shown as combined GPS uncertainty. When fresh fixes place peers within 20 metres, each phone sounds an optional local alarm. Radio RSSI is not treated as a direction sensor.
+
+Discovery advertises and queries the Talk2 Bluetooth RFCOMM UUID and Wi-Fi Direct DNS-SD service instead of displaying arbitrary nearby Bluetooth or Wi-Fi devices. A phone must have Talk2's service advertisement active to appear in the filtered list.
 
 ## Optional online path
 

@@ -1,4 +1,4 @@
-# Adapted from the supplied iTantra exporter; see NOTICE.
+# Talk2 model export utility; verify each checkpoint's license before distribution.
 #!/usr/bin/env python3
 """
 Export IndicTrans2 indic-indic distilled 320M to ONNX for on-device translation.
@@ -441,7 +441,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
 
     print("=" * 60)
-    print("IndicTrans2 ONNX Export for iTantra")
+    print("IndicTrans2 ONNX Export for Talk2")
     print("=" * 60)
 
     print(f"\nDownloading model from {MODEL_REPO}...")

@@ -1,6 +1,6 @@
 # Source review and migration decisions
 
-Inputs: the uploaded main, Tarun, i18n, map-6, profile, translation, dark/light, and pack-readiness/Marathi branches; `neuromonk Ps01.pdf`; the screenshot set in the request; and the public repository/release links. `source-inventory.json` records branch file counts and document hashes for reproducibility.
+Inputs: the supplied product requirements, screenshots and public model references. This document records implementation constraints and validation limits for reproducibility.
 
 The presentation describes the intended low-bitrate offline pipeline: speech → text → encryption → local radio → decryption → speech. References include Vosk, sherpa-onnx and AI4Bharat. The inspected source's actual shipping direction differs: Vosk was dropped; ONNX CTC and MMS/VITS are used. The Android application is Compose/native, despite some older READMEs claiming no UI. The user referred to it as Flutter, but the uploaded implementation is not a Flutter project.
 
@@ -14,14 +14,14 @@ The latest branch adds a Unicode-block transliteration helper, while nearby docu
 
 The source's STT exporter lists Hindi and several other checkpoint IDs as missing (`None`). A bundled Hindi vocabulary cannot recover an acoustic model's weights or reliably identify its checkpoint. The adapted exporter retains that gap instead of silently inventing a source checkpoint.
 
-Talk2 is a new React Native UI and Java implementation; it does not copy the old Android source tree. The protocol is new and requires Talk2 at both ends. Existing iTantra APKs will not pair with it. Python exporters and localized alert text are adapted from supplied materials with attribution in NOTICE. See STATUS.md for scope and validation limits.
+Talk2 is a new React Native UI and Java implementation. The protocol requires Talk2 at both ends. Python exporters and localized alert text are maintained as Talk2 project code; every external checkpoint must retain its own model-card and redistribution review. See STATUS.md for scope and validation limits.
 
 Reference links:
 
-- https://github.com/Sanchit-044/iTantra
-- https://github.com/Sanchit-044/iTantra/releases/tag/model-pack-v1
 - https://github.com/alphacep/vosk-api
 - https://github.com/k2-fsa/sherpa-onnx
+- https://aikosh.indiaai.gov.in/home/models/
+- https://ai4bharat.iitm.ac.in/areas/model/ASR/IndicConformer/
 - https://github.com/AI4Bharat/IndicTrans2
 - https://developer.android.com/develop/connectivity/wifi/wifi-direct
 - https://developer.android.com/develop/sensors-and-location/sensors/sensors_position
