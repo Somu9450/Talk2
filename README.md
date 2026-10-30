@@ -4,6 +4,7 @@ React Native Android communication app with Java device integrations and an opti
 
 **Read [docs/STATUS.md](docs/STATUS.md) before treating this as a production-ready app.** This source package is a working implementation to build and validate, not a claim of verified ten-language translation or tested radio behavior on physical phones. Model weights are downloaded separately.
 
+
 ## What is included
 
 - React Native/TypeScript interface: onboarding, profile name, speech packs, Talk, Radar, Alerts, History, Settings, diagnostics and optional GPT.
